@@ -17,10 +17,10 @@
 ### About me
 
 - Milosz Krajewski
-- BLOBAs @ Sepura
+- Full stack @ Newco
 - first line of code written in ~1984
-- C, C++, C#, SQL
-- (Iron)Python, F#
+- C#, ES6, SQL
+- C, C++, (Iron)Python, F#
 
 ---
 
@@ -101,6 +101,10 @@ Using 'extension method' and 'lambda' feature:
 ***
 
 > "These days software is too complex. We can’t afford to speculate what else it should do. We need to really focus on what it needs." –- **Erich Gamma**
+
+---
+
+![complexity](images/complexity.png)
 
 ---
 
@@ -186,6 +190,67 @@ Technically, it is very clear what it does:
 
 ***
 
+### Functional patterns you already use
+
+![fp-loops.png](images/fp-loops.png)
+
+---
+
+```csharp
+T Reduce(this IEnumerable<T> collection, Func<T, T, T> reducer, T intial = default(T)) {
+	var result = initial;
+	foreach (var item in collection) {
+		result = reducer(result, item);
+	}
+	return result;
+}
+```
+
+---
+
+### Sum
+
+```csharp
+numbers.Reduce((a, b) => a + b, 0);
+```
+
+---
+
+### Product
+
+```csharp
+numbers.Reduce((a, b) => a * b, 0);
+```
+
+---
+
+### Join (strings)
+
+```csharp
+strings.Reduce((a, b) => a + "," + b, 0);
+```
+
+---
+
+### Build CSV
+
+```csharp
+ToLine(this IEnumerable<string> columns) =>
+	columns.Reduce((a, b) => a + "," + b);
+ToFile(this IEnumerable<IEnumerable<string>> rows) =>
+	rows.Reduce((a, b) => a.ToLine() + "\n" + a.ToLine());
+```
+
+---
+
+### Factorial
+
+```csharp
+Enumerable(1, value).Reduce((a, b) => a * b, 1);
+```
+
+***
+
 ### Functional design
 
 #### You get some 'P's for free:
@@ -248,21 +313,22 @@ Technically, it is very clear what it does:
 
 Let's delete some folders:
 
-	[lang=cs]
-	public void DeleteDirectoryTree(DirectoryInfo directory)
+```csharp
+public void DeleteDirectoryTree(DirectoryInfo directory)
+{
+	foreach (var child in directory.GetDirectories())
 	{
-		foreach (var child in directory.GetDirectories())
-		{
-			DeleteDirectoryTree(child);
-		}
-
-		foreach (var file in directory.GetFiles())
-		{
-			file.Delete();
-		}
-
-		directory.Delete();
+		DeleteDirectoryTree(child);
 	}
+
+	foreach (var file in directory.GetFiles())
+	{
+		file.Delete();
+	}
+
+	directory.Delete();
+}
+```
 
 Let's call it 'business logic'.
 
@@ -276,35 +342,37 @@ Neat?
 
 First we need to take it out of `foreach`.
 
-	[lang=cs]
-	var children = directory.GetDirectories();
+```csharp
+var children = directory.GetDirectories();
 
-	foreach (var child in children)
-	{
-		DeleteDirectoryTree(child);
-	}
+foreach (var child in children)
+{
+	DeleteDirectoryTree(child);
+}
+```
 
 ---
 
 We would also like to **Ignore** but **Log** first...
 
-	[lang=cs]
-	DirectoryInfo[] children = null;
-	try
+```csharp
+DirectoryInfo[] children = null;
+try
+{
+	children = directory.GetDirectories();
+}
+catch (Exception e)
+{
+	Trace.TraceError("{0}", e);
+}
+if (children != null)
+{
+	foreach (var child in children)
 	{
-		children = directory.GetDirectories();
+		DeleteDirectoryTree(child);
 	}
-	catch (Exception e)
-	{
-		Trace.TraceError("{0}", e);
-	}
-	if (children != null)
-	{
-		foreach (var child in children)
-		{
-			DeleteDirectoryTree(child);
-		}
-	}
+}
+```
 
 (find 'business logic')
 
@@ -312,23 +380,24 @@ We would also like to **Ignore** but **Log** first...
 
 ...same with `directory.GetFiles()`...
 
-	[lang=cs]
-	FileInfo[] files = null;
-	try
+```csharp
+FileInfo[] files = null;
+try
+{
+	files = directory.GetFiles();
+}
+catch (Exception e)
+{
+	Trace.TraceError("{0}", e);
+}
+if (files != null)
+{
+	foreach (var file in files)
 	{
-		files = directory.GetFiles();
+		file.Delete();
 	}
-	catch (Exception e)
-	{
-		Trace.TraceError("{0}", e);
-	}
-	if (files != null)
-	{
-		foreach (var file in files)
-		{
-			file.Delete();
-		}
-	}
+}
+```
 
 (find 'business logic')
 
@@ -336,21 +405,22 @@ We would also like to **Ignore** but **Log** first...
 
 I think `file.Delete()` can definitely throw exception...
 
-	[lang=cs]
-	if (files != null)
+```csharp
+if (files != null)
+{
+	foreach (var file in files)
 	{
-		foreach (var file in files)
+		try
 		{
-			try
-			{
-				file.Delete();
-			}
-			catch (Exception e)
-			{
-				Trace.TraceError("{0}", e);
-			}
+			file.Delete();
+		}
+		catch (Exception e)
+		{
+			Trace.TraceError("{0}", e);
 		}
 	}
+}
+```
 
 (find 'business logic')
 
@@ -358,15 +428,16 @@ I think `file.Delete()` can definitely throw exception...
 
 ...as well as `directory.Delete()`...
 
-	[lang=cs]
-	try
-	{
-		directory.Delete();
-	}
-	catch (Exception e)
-	{
-		Trace.TraceError("{0}", e);
-	}
+```csharp
+try
+{
+	directory.Delete();
+}
+catch (Exception e)
+{
+	Trace.TraceError("{0}", e);
+}
+```
 
 (find 'business logic')
 
@@ -374,31 +445,32 @@ I think `file.Delete()` can definitely throw exception...
 
 It would be useful if we could retry few times in case file is in use...
 
-	[lang=cs]
-	try
+```csharp
+try
+{
+	var count = 0;
+	while (true)
 	{
-		var count = 0;
-		while (true)
+		count++;
+		try
 		{
-			count++;
-			try
-			{
-				file.Delete();
-				break; // if success
-			}
-			catch (Exception e)
-			{
-				if (count >= 5)
-					throw;
-				Trace.TraceWarning("{0}", e);
-				Thread.Sleep(200);
-			}
+			file.Delete();
+			break; // if success
+		}
+		catch (Exception e)
+		{
+			if (count >= 5)
+				throw;
+			Trace.TraceWarning("{0}", e);
+			Thread.Sleep(200);
 		}
 	}
-	catch (Exception e)
-	{
-		Trace.TraceError("{0}", e);
-	}
+}
+catch (Exception e)
+{
+	Trace.TraceError("{0}", e);
+}
+```
 
 (find 'business logic')
 
@@ -414,10 +486,11 @@ If you look at source code (Solution2), in my opinion, you will agree that origi
 
 In C# `void` is not regular type, like in F#.
 
-	[lang=cs]
-	typeof(Action) == typeof(Func<void, void>)
-	typeof(Action<T>) == typeof(Func<T, void>)
-	typeof(Func<T>) == typeof(Func<void, T>)
+```csharp
+typeof(Action) == typeof(Func<void, void>)
+typeof(Action<T>) == typeof(Func<T, void>)
+typeof(Func<T>) == typeof(Func<void, T>)
+```
 
 If it was, we would need only one implementation of many operators.
 
@@ -425,53 +498,56 @@ If it was, we would need only one implementation of many operators.
 
 To avoid multiple implementations, we will 'cheat' with `Void` type...
 
-	[lang=cs]
-	public sealed class Void
-	{
-		public static readonly Void Instance = new Void();
+```csharp
+public sealed class Void
+{
+	public static readonly Void Instance = new Void();
 
-		private Void() { }
+	private Void() { }
 
-		public override string ToString() { return "Void"; }
-		public override bool Equals(object obj) { return obj is Void; }
-		public override int GetHashCode() { return 0; }
-	}
+	public override string ToString() { return "Void"; }
+	public override bool Equals(object obj) { return obj is Void; }
+	public override int GetHashCode() { return 0; }
+}
+```
 
 ---
 
 ...and some 'wrist saving' Fx class (proudly called Functional eXtensions)...
 
-	[lang=cs]
-	public static class Fx
+```csharp
+public static class Fx
+{
+	public static readonly Void Void = Void.Instance;
+
+	public static Func<Void> ToFunc(this Action action)
 	{
-		public static readonly Void Void = Void.Instance;
-
-		public static Func<Void> ToFunc(this Action action)
-		{
-			return () => {
-				action();
-				return Void;
-			};
-		}
-
-		public static Func<T, Void> ToFunc<T>(this Action<T> action)
-		{
-			return t => {
-				action(t);
-				return Void;
-			};
-		}
+		return () => {
+			action();
+			return Void;
+		};
 	}
+
+	public static Func<T, Void> ToFunc<T>(this Action<T> action)
+	{
+		return t => {
+			action(t);
+			return Void;
+		};
+	}
+}
+```
 
 ---
 
 We also don't like empty enumerables:
 
-	[lang=cs]
-	public static IEnumerable<T> NotNull(this IEnumerable<T> collection)
-	{
-		return collection ?? Enumerable.Empty<T>();
-	}
+```csharp
+public static IEnumerable<T> NotNull(this IEnumerable<T> collection)
+{
+	return collection ?? Enumerable.Empty<T>();
+}
+```
 
 (yes, it just uses Enumerable.Empty but allowing type inference)
 
@@ -479,49 +555,53 @@ We also don't like empty enumerables:
 
 So, we were saying we want to 'forgive' some exceptions, **Ignore** but **Log** first:
 
-	[lang=cs]
-	public static T Forgive<T>(this Func<T> func, T defaultValue = default(T))
+```csharp
+public static T Forgive<T>(this Func<T> func, T defaultValue = default(T))
+{
+	try
 	{
-		try
-		{
-			return func();
-		}
-		catch (Exception e)
-		{
-			Trace.TraceWarning("{0}", e);
-			return defaultValue;
-		}
+		return func();
 	}
+	catch (Exception e)
+	{
+		Trace.TraceWarning("{0}", e);
+		return defaultValue;
+	}
+}
 
-	public static void Forgive(this Action action)
-	{
-		Forgive(action.ToFunc()); // wrist saving already...
-	}
+public static void Forgive(this Action action)
+{
+	Forgive(action.ToFunc()); // wrist saving already...
+}
+```
 
 ---
 
 So, recursive dive is changed from:
 
-	[lang=cs]
-	foreach (var child in directory.GetDirectories())
-	{
-		DeleteDirectoryTree(child);
-	}
+```csharp
+foreach (var child in directory.GetDirectories())
+{
+	DeleteDirectoryTree(child);
+}
+```
 
 ...to:
 
-	[lang=cs]
-	foreach (var child in Fx.Forgive(() => directory.GetDirectories()).NotNull())
-	{
-		DeleteDirectoryTree(child);
-	}
+```csharp
+foreach (var child in Fx.Forgive(() => directory.GetDirectories()).NotNull())
+{
+	DeleteDirectoryTree(child);
+}
+```
 
 ---
 
 ...it could be actually:
 
-	[lang=cs]
-	Fx.Forgive(() => directory.GetDirectories(), Enumerable.Empty<DirectoryInfo>())
+```csharp
+Fx.Forgive(() => directory.GetDirectories(), Enumerable.Empty<DirectoryInfo>())
+```
 
 ...but I do like type inference.
 
@@ -529,70 +609,113 @@ So, recursive dive is changed from:
 
 Same thing with files:
 
-	[lang=cs]
-	foreach (var file in Fx.Forgive(() => directory.GetFiles()).NotNull())
-	{
-		Fx.Forgive(() => file.Delete());
-	}
+```csharp
+foreach (var file in Fx.Forgive(() => directory.GetFiles()).NotNull())
+{
+	Fx.Forgive(() => file.Delete());
+}
+```
 
 ...and folders:
 
-	[lang=cs]
-	Fx.Forgive(() => directory.Delete());
+```csharp
+Fx.Forgive(() => directory.Delete());
+```
 
 ---
 
 `Retry` seems to be a little bit more complicated:
 
-	[lang=cs]
-	public static T Retry<T>(
-		Func<T> action, Func<int, TimeSpan, bool> retry, Action<TimeSpan> wait = null)
-	{
-		var count = 0;
-		var started = DateTimeOffset.Now;
-		var exceptions = new List<Exception>();
-		wait = wait ?? (_ => { });
+```csharp
+public static T Retry<T>(
+	Func<T> action, Func<int, TimeSpan, bool> retry, Action<TimeSpan> wait = null)
+{
+	var count = 0;
+	var started = DateTimeOffset.Now;
+	var exceptions = new List<Exception>();
+	wait = wait ?? (_ => { });
 
-		while (true)
-		{
-			count++;
+	while (true) {
+		count++;
 
-			try
-			{
-				return action();
-			}
-			catch (Exception e)
-			{
-				Trace.TraceWarning("{0}", e);
-				exceptions.Add(e);
-			}
-
-			var elapsed = DateTimeOffset.Now.Subtract(started);
-			if (!retry(count, elapsed))
-				break;
-			wait(elapsed);
+		try {
+			return action();
+		}
+		catch (Exception e) {
+			Trace.TraceWarning("{0}", e);
+			exceptions.Add(e);
 		}
 
-		throw new AggregateException(exceptions);
+		var elapsed = DateTimeOffset.Now.Subtract(started);
+		if (!retry(count, elapsed))
+			break;
+		wait(elapsed);
 	}
+
+	throw new AggregateException(exceptions);
+}
+```
 
 ---
 
 ...and we need alternative implementation for `Action`:
 
-	[lang=cs]
-	public static void Retry(
-		Action action, Func<int, TimeSpan, bool> retry, Action<TimeSpan> wait = null)
-	{
-		Retry(action.ToFunc(), retry, wait);
-	}
+```csharp
+public static void Retry(
+	Action action, Func<int, TimeSpan, bool> retry, Action<TimeSpan> wait = null)
+{
+	Retry(action.ToFunc(), retry, wait);
+}
+```
+
+---
+
+Who is scared of 'Retry'?
+
+```csharp
+public static T Retry<T>(
+	Func<T> action,
+	int? retryCount = null, TimeSpan? retryTime = null, TimeSpan? interval = null)
+{
+	var retryCountValue = retryCount ?? int.MaxValue;
+	var retryTimeValue = retryTime ?? TimeSpan.Infinity;
+	var intervalValue = interval ?? 100;
+
+	return Retry(
+		action,
+		(c, i) => c < retryCountValue && i < retryTimeValue,
+		_ => Thread.Sleep(intervalValue));
+}
+```
 
 ---
 
 ...but the whole file deletion loop will look like this now:
 
-	[lang=cs]
-	foreach (var file in Forgive(() => directory.GetFiles()).NotNull())
+```csharp
+foreach (var file in Forgive(() => directory.GetFiles()).NotNull())
+{
+	Fx.Forgive(
+		() => Fx.Retry(
+			() => file.Delete(),
+			(c, _) => c < 5,
+			_ => Thread.Sleep(200)));
+}
+```
+
+---
+
+...which makes whole solution still fitting one page:
+
+```csharp
+public static void DeleteDirectoryTree(DirectoryInfo directory)
+{
+	foreach (var child in Fx.Forgive(() => directory.GetDirectories()).NotNull())
+	{
+		DeleteDirectoryTree(child);
+	}
+
+	foreach (var file in Fx.Forgive(() => directory.GetFiles()).NotNull())
 	{
 		Fx.Forgive(
 			() => Fx.Retry(
@@ -600,41 +723,32 @@ Same thing with files:
 				(c, _) => c < 5,
 				_ => Thread.Sleep(200)));
 	}
-    
----
 
-...which makes whole solution still fitting one page:
-
-	[lang=cs]
-	public static void DeleteDirectoryTree(DirectoryInfo directory)
-	{
-		foreach (var child in Fx.Forgive(() => directory.GetDirectories()).NotNull())
-		{
-			DeleteDirectoryTree(child);
-		}
-
-		foreach (var file in Fx.Forgive(() => directory.GetFiles()).NotNull())
-		{
-			Fx.Forgive(
-				() => Fx.Retry(
-					() => file.Delete(),
-					(c, _) => c < 5,
-					_ => Thread.Sleep(200)));
-		}
-
-		Fx.Forgive(() => directory.Delete());
-	}
+	Fx.Forgive(() => directory.Delete());
+}
+```
 
 ---
 
-...actually, with some behind-the-scene magic, it could be something like:
+...or with C#7 features:
 
-    [lang=cs]
-    // ...
-    files.ForEach(DeleteFile.Retry((c, _) => c < 5, _ => Thread.Sleep(200)).Forgive())
-    // ...
+```csharp
+public static void DeleteDirectoryTree(DirectoryInfo directory)
+{
+	IEnumerable<DirectoryInfo> Children() =>
+		Fx.Forgive(() => directory.GetDirectories()).NotNull();
+	IEnumerable<FileInfo> Files() =>
+		Fx.Forgive(() => directory.GetFiles()).NotNull();
+	void DeleteFile(file: FileInfo) =>
+		Fx.Forgive(() => Fx.Retry(
+			() => file.Delete(), (c, _) => c < 5, _ => Thread.Sleep(200)));
+	void DeleteThisFolder() => Fx.Forgive(() => directory.Delete());
 
-...but magic is quite heavy, and outside the scope of this presentation.
+	Children().ForEach(DeleteDirectoryTree);
+	Files().ForEach(DeleteFile);
+	DeleteThisFolder();
+}
+```
 
 ***
 
@@ -642,27 +756,28 @@ Same thing with files:
 
 Note, that behaviour modification like `Forgive` and `Retry` can be passed around and externally injected:
 
-	[lang=cs]
-	public static void DeleteDirectoryTree(
-		DirectoryInfo directory,
-		Action<Action> directoryDeletionStrategy = null,
-		Action<Action> fileDeletionStrategy = null)
+```csharp
+public static void DeleteDirectoryTree(
+	DirectoryInfo directory,
+	Action<Action> directoryDeletionStrategy = null,
+	Action<Action> fileDeletionStrategy = null)
+{
+	fileDeletionStrategy = fileDeletionStrategy ?? (a => a());
+	directoryDeletionStrategy = directoryDeletionStrategy ?? (a => a());
+
+	foreach (var child in Fx.Forgive(() => directory.GetDirectories()).NotNull())
 	{
-		fileDeletionStrategy = fileDeletionStrategy ?? (a => a());
-		directoryDeletionStrategy = directoryDeletionStrategy ?? (a => a());
-
-		foreach (var child in Fx.Forgive(() => directory.GetDirectories()).NotNull())
-		{
-			DeleteDirectoryTree(child);
-		}
-
-		foreach (var file in Fx.Forgive(() => directory.GetFiles()).NotNull())
-		{
-			fileDeletionStrategy(() => file.Delete());
-		}
-
-		directoryDeletionStrategy(() => directory.Delete());
+		DeleteDirectoryTree(child);
 	}
+
+	foreach (var file in Fx.Forgive(() => directory.GetFiles()).NotNull())
+	{
+		fileDeletionStrategy(() => file.Delete());
+	}
+
+	directoryDeletionStrategy(() => directory.Delete());
+}
+```
 
 ---
 
@@ -670,67 +785,60 @@ Note, that behaviour modification like `Forgive` and `Retry` can be passed aroun
 
 Actually, the whole recursion model here is a DFS/post-order algorithm:
 
-	[lang=cs]
-	public static IEnumerable<T> RecursivelySelectMany<T>(
-		this IEnumerable<T> collection,
-		Func<T, IEnumerable<T>> selector)
+```csharp
+public static IEnumerable<T> RecursivelySelectMany<T>(
+	this IEnumerable<T> collection,
+	Func<T, IEnumerable<T>> selector)
+{
+	foreach (var item in collection)
 	{
-		foreach (var item in collection)
-		{
-			foreach (var subitem in RecursivelySelectMany(selector(item), selector))
-				yield return subitem;
-			yield return item;
-		}
+		foreach (var subitem in RecursivelySelectMany(selector(item), selector))
+			yield return subitem;
+		yield return item;
 	}
+}
+```
 
 ---
 
 The function to delete all files matching criteria in directory tree could be expressed as:
 
-	[lang=cs]
-	public void DeleteFilesInTree(
-		IEnumerable<DirectoryInfo> roots,
-		Func<DirectoryInfo, bool> directoryFilter,
-		Func<FileInfo, bool> fileFilter)
-	{
-		roots
-		.RecursivelySelectMany(d => Fx.Forgive(() => d.GetDirectories()).NotNull())
-		.Where(d => directoryFilter == null || directoryFilter(d))
-		.Lookahead()
-		.ForEach(directory =>
-			directory
-			.SelectMany(d => Fx.Forgive(() => d.GetFile()).NotNull())
-			.Where(f => fileFilter == null || fileFileter(f))
-			.AsParallel()
-			.ForAll(f => Fx.Forgive(() => Fx.Retry(() =>
-				f.Delete(), (c, _) => c < 5, _ => Thread.Sleep(200))))
-		);
+```csharp
+public void DeleteFilesInTrees(
+	IEnumerable<DirectoryInfo> roots)
+{
+	void PurgeFolder(directory: DirectoryInfo) {
+		directory.SelectMany(Files).AsParallel().ForAll(DeleteFile);
+		DeleteFolder(directory);
 	}
-
+	roots.RecursivelySelectMany(Chlidren).Lookahead().ForEach(Purge);
+}
+```
 ---
 
 Where `Lookahead` is prefetching items in separate thread:
 
-	[lang=cs]
-	public static IEnumerable<T> Lookahead<T>(
-		this IEnumerable<T> collection, CancellationToken? token = null)
-	{
-		token = token ?? CancellationToken.None;
-		var queue = new BlockingCollection<T>(new ConcurrentQueue<T>());
+```csharp
+public static IEnumerable<T> Lookahead<T>(
+	this IEnumerable<T> collection, CancellationToken? token = null)
+{
+	token = token ?? CancellationToken.None;
+	var queue = new BlockingCollection<T>(new ConcurrentQueue<T>());
 
-		Task.Factory.StartNew(() => {
-			try
-			{
-				collection.ForEach(i => queue.Add(i, token.Value));
-			}
-			finally
-			{
-				queue.CompleteAdding();
-			}
-		}, token.Value, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+	Task.Factory.StartNew(() => {
+		try
+		{
+			collection.ForEach(i => queue.Add(i, token.Value));
+		}
+		finally
+		{
+			queue.CompleteAdding();
+		}
+	}, token.Value, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
-		return queue.GetConsumingEnumerable(token.Value);
-	}
+	return queue.GetConsumingEnumerable(token.Value);
+}
+```
 
 ---
 
@@ -738,89 +846,99 @@ Even, if it is quite complex now, it has features which just would be a nightmar
 
 ***
 
+### Name the pattern
+
+![Name the hero pose](images/pose.png)
+
+---
+
 ### Lazy
 
-	[lang=cs]
-	public static Func<T> Lazy<T>(Func<T> factory)
-	{
-		var variable = new Lazy<T>(factory);
-		return () => variable.Value;
-	}
+```csharp
+public static Func<T> Lazy<T>(Func<T> factory)
+{
+	var variable = new Lazy<T>(factory);
+	return () => variable.Value;
+}
+```
 
 ---
 
 ### Weak
 
-	[lang=cs]
-	public static Func<T> Weak<T>(T value)
-		where T: class
-	{
-		var reference = new WeakReference(value);
-		return () => (T)reference.Target;
-	}
+```csharp
+public static Func<T> Weak<T>(T value)
+	where T: class
+{
+	var reference = new WeakReference(value);
+	return () => (T)reference.Target;
+}
+```
 
 ---
 
 ### Cache
 
-	[lang=cs]
-	public static Func<T> Cache<T>(Func<T> factory)
-		where T: class
-	{
-		var factorySync = new object();
-		Func<T> reference = () => null;
-		return () => {
-			var value = reference();
-			if (null == value)
+```csharp
+public static Func<T> Cache<T>(Func<T> factory)
+	where T: class
+{
+	var factorySync = new object();
+	Func<T> reference = () => null;
+	return () => {
+		var value = reference();
+		if (null == value)
+		{
+			lock (factorySync)
 			{
-				lock (factorySync)
+				value = reference();
+				if (null == value)
 				{
-					value = reference();
-					if (null == value)
-					{
-						value = factory();
-						reference = Weak(value);
-					}
+					value = factory();
+					reference = Weak(value);
 				}
 			}
-			return value;
-		};
-	}
+		}
+		return value;
+	};
+}
+```
 
 ***
 
 ### Delay
 
-	[lang=cs]
-	private static void Delay(
-		int timeout, CancellationToken cancellationToken, Action action)
-	{
-		var id = Guid.NewGuid();
-		var timer = default(Timer);
-		var ready = new ManualResetEventSlim(false);
-		var handler = new TimerCallback(_ => {
-			ready.Wait();
-			ready.Dispose();
+```csharp
+private static void Delay(
+	int timeout, CancellationToken cancellationToken, Action action)
+{
+	var id = Guid.NewGuid();
+	var timer = default(Timer);
+	var ready = new ManualResetEventSlim(false);
+	var handler = new TimerCallback(_ => {
+		ready.Wait();
+		ready.Dispose();
 
-			try
-			{
-				Timer removed;
-				var execute =
-					!cancellationToken.IsCancellationRequested &&
-					_timerMap.TryRemove(id, out removed); // assert true
-				if (execute)
-					action();
-			}
-			finally
-			{
-				timer.Dispose();
-			}
-		});
+		try
+		{
+			Timer removed;
+			var execute =
+				!cancellationToken.IsCancellationRequested &&
+				_timerMap.TryRemove(id, out removed); // assert true
+			if (execute)
+				action();
+		}
+		finally
+		{
+			timer.Dispose();
+		}
+	});
 
-		timer = new Timer(handler, null, timeout, Timeout.Infinite);
-		_timerMap.TryAdd(id, timer); // assert true
-		ready.Set();
-	}
+	timer = new Timer(handler, null, timeout, Timeout.Infinite);
+	_timerMap.TryAdd(id, timer); // assert true
+	ready.Set();
+}
+```
 
 ***
 
